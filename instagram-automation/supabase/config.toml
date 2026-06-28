@@ -1,0 +1,2 @@
+[functions.publish-due-reel]
+verify_jwt = false
