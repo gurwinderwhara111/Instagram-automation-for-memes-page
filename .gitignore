@@ -5,3 +5,5 @@ node_modules/
 .env*.local
 database\ coonetion\ details\ dotn\ deltest\ them.txt
 tunnel/token.txt
+.vercel
+.env*

@@ -17,7 +17,10 @@ async function findExistingByHash(
     limit: 1000,
     sortBy: { column: "name", order: "asc" }
   });
-  if (error) return null;
+  if (error) {
+    console.error("[video-upload] Storage list error during dedup check:", error.message);
+    return null;
+  }
   const match = data?.find((f) => f.name.startsWith(prefix));
   if (!match) return null;
   const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(match.name);
@@ -123,9 +126,8 @@ export async function POST(request: Request) {
         : `Uploaded ${fresh} video${fresh === 1 ? "" : "s"}.`
     }, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown video upload error" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Unknown video upload error";
+    console.error("[video-upload] Error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -8,14 +8,30 @@ type MetaStatus = {
 };
 
 async function readMetaResponse<T>(response: Response): Promise<T> {
-  const payload = await response.json().catch(() => null);
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = (await response.json()) as Record<string, unknown> | null;
+  } catch {
+    payload = null;
+  }
+
   if (!response.ok) {
+    const errorObj = (payload?.error as Record<string, unknown>) || payload;
+    const code = errorObj?.code ? ` (code: ${errorObj.code})` : "";
+    const subcode = errorObj?.error_subcode ? ` subcode: ${errorObj.error_subcode}` : "";
     const message =
-      payload?.error?.message ||
+      errorObj?.message ||
       payload?.message ||
       `Meta request failed with ${response.status}`;
-    throw new Error(message);
+    const fullMessage = `${message}${code}${subcode}`;
+    console.error(`[Meta API Error] ${response.status}: ${fullMessage}`);
+    throw new Error(fullMessage);
   }
+
+  if (payload === null) {
+    throw new Error("Meta returned an empty response (no JSON body).");
+  }
+
   return payload as T;
 }
 

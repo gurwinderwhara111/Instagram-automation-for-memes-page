@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z, ZodError } from "zod";
-import { createReelContainer, getContainerStatus, publishMedia } from "@/lib/meta-client";
+import { createReelContainer, getContainerStatusWithMeta, publishMedia } from "@/lib/meta-client";
 import { getPrivateAccount } from "@/lib/reel-service";
 import { createSupabaseAdmin, isAdminRequest, unauthorizedResponse } from "@/lib/supabase-admin";
 
@@ -13,8 +13,7 @@ const instantVideoSchema = z.object({
     .string()
     .trim()
     .url("Use a valid public HTTPS video URL.")
-    .refine((value) => value.startsWith("https://"), "Video URL must start with https://")
-    .refine((value) => value.toLowerCase().includes(".mp4"), "Use a public MP4 URL."),
+    .refine((value) => value.startsWith("https://"), "Video URL must start with https://"),
   caption: z.string().trim().min(1, "Caption is required.").max(2200),
   confirmRealPost: z.literal(true, {
     error: "Confirm that this will create a real Instagram Reel."
@@ -26,10 +25,9 @@ function errorResponse(error: unknown, status = 400) {
     return NextResponse.json({ error: "Validation failed", details: error.issues }, { status });
   }
 
-  return NextResponse.json(
-    { error: error instanceof Error ? error.message : "Unknown instant video post error" },
-    { status }
-  );
+  const message = error instanceof Error ? error.message : "Unknown instant video post error";
+  console.error("[instant-video] Error:", message);
+  return NextResponse.json({ error: message }, { status });
 }
 
 function sleep(ms: number): Promise<void> {
@@ -56,18 +54,22 @@ export async function POST(request: Request) {
     let finalStatus = "IN_PROGRESS";
 
     for (let attempt = 1; attempt <= 6; attempt += 1) {
-      finalStatus = await getContainerStatus({
+      const containerStatus = await getContainerStatusWithMeta({
         creationId,
         accessToken: account.access_token
       });
+      finalStatus = containerStatus.status_code;
       statusHistory.push(finalStatus);
 
       if (finalStatus === "FINISHED" || finalStatus === "PUBLISHED") {
-        const publishId = await publishMedia({
-          igUserId: account.ig_user_id,
-          accessToken: account.access_token,
-          creationId
-        });
+        const publishId =
+          finalStatus === "PUBLISHED"
+            ? creationId
+            : await publishMedia({
+                igUserId: account.ig_user_id,
+                accessToken: account.access_token,
+                creationId
+              });
 
         return NextResponse.json({
           success: true,

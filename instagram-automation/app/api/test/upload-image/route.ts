@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/lib/supabase-admin";
+import { createSupabaseAdmin, isAdminRequest, unauthorizedResponse } from "@/lib/supabase-admin";
 import { exampleBucketName } from "@/lib/utils";
 import type { UploadedImage } from "@/lib/types";
 
@@ -23,9 +23,8 @@ function safeExtension(file: File): string {
 }
 
 export async function POST(request: Request) {
-  const expected = process.env.ADMIN_PASSWORD;
-  if (expected && request.headers.get("x-admin-password") !== expected) {
-    return NextResponse.json({ error: "Admin password is required." }, { status: 401 });
+  if (!isAdminRequest(request)) {
+    return unauthorizedResponse();
   }
 
   try {
@@ -74,9 +73,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ image });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown image upload error" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Unknown image upload error";
+    console.error("[upload-image] Error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

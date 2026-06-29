@@ -5,6 +5,12 @@ import { createSupabaseAdmin, isAdminRequest, unauthorizedResponse } from "@/lib
 
 export const runtime = "nodejs";
 
+function errorResponse(error: unknown, status = 500) {
+  const message = error instanceof Error ? error.message : "Unknown account test error";
+  console.error("[test/accounts] Error:", message);
+  return NextResponse.json({ error: message }, { status });
+}
+
 export async function GET(request: Request) {
   if (!isAdminRequest(request)) {
     return unauthorizedResponse();
@@ -28,7 +34,7 @@ export async function GET(request: Request) {
             connected: true,
             profile,
             error: null
-          };
+          } as const;
         } catch (error) {
           return {
             id: account.id,
@@ -38,16 +44,13 @@ export async function GET(request: Request) {
             connected: false,
             profile: null,
             error: error instanceof Error ? error.message : "Unknown Meta account test error"
-          };
+          } as const;
         }
       })
     );
 
     return NextResponse.json({ results });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown account test error" },
-      { status: 500 }
-    );
+    return errorResponse(error, 500);
   }
 }

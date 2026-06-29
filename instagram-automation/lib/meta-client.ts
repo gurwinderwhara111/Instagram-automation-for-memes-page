@@ -1,3 +1,5 @@
+const META_FETCH_TIMEOUT = 25_000;
+
 type MetaSuccess = {
   id: string;
 };
@@ -15,15 +17,37 @@ export type MetaAccountProfile = {
   media_count?: number;
 };
 
+function metaFetch(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), META_FETCH_TIMEOUT);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 async function readMetaResponse<T>(response: Response): Promise<T> {
-  const payload = await response.json().catch(() => null);
+  let payload: Record<string, unknown> | null = null;
+  try {
+    payload = (await response.json()) as Record<string, unknown> | null;
+  } catch {
+    payload = null;
+  }
+
   if (!response.ok) {
+    const errorObj = (payload?.error as Record<string, unknown>) || payload;
+    const code = errorObj?.code ? ` (code: ${errorObj.code})` : "";
+    const subcode = errorObj?.error_subcode ? ` subcode: ${errorObj.error_subcode}` : "";
     const message =
-      payload?.error?.message ||
+      errorObj?.message ||
       payload?.message ||
       `Meta request failed with ${response.status}`;
-    throw new Error(message);
+    const fullMessage = `${message}${code}${subcode}`;
+    console.error(`[Meta API Error] ${response.status}: ${fullMessage}`, JSON.stringify(payload));
+    throw new Error(fullMessage);
   }
+
+  if (payload === null) {
+    throw new Error("Meta returned an empty response (no JSON body).");
+  }
+
   return payload as T;
 }
 
@@ -41,7 +65,7 @@ export async function testInstagramAccount(input: {
   directUrl.searchParams.set("fields", "id,username,account_type,media_count");
   directUrl.searchParams.set("access_token", input.accessToken);
 
-  const directResponse = await fetch(directUrl);
+  const directResponse = await metaFetch(directUrl.toString());
   if (directResponse.ok) {
     return readMetaResponse<MetaAccountProfile>(directResponse);
   }
@@ -50,7 +74,7 @@ export async function testInstagramAccount(input: {
   meUrl.searchParams.set("fields", "user_id,username,account_type,media_count");
   meUrl.searchParams.set("access_token", input.accessToken);
 
-  const meProfile = await readMetaResponse<MetaAccountProfile>(await fetch(meUrl));
+  const meProfile = await readMetaResponse<MetaAccountProfile>(await metaFetch(meUrl.toString()));
   const returnedUserId = meProfile.user_id || meProfile.id;
   if (returnedUserId && returnedUserId !== input.igUserId) {
     throw new Error(
@@ -76,7 +100,7 @@ export async function createImageContainer(input: {
     access_token: input.accessToken
   });
 
-  const response = await fetch(graphUrl(`/${input.igUserId}/media`), {
+  const response = await metaFetch(graphUrl(`/${input.igUserId}/media`), {
     method: "POST",
     body
   });
@@ -98,7 +122,7 @@ export async function createReelContainer(input: {
     access_token: input.accessToken
   });
 
-  const response = await fetch(graphUrl(`/${input.igUserId}/media`), {
+  const response = await metaFetch(graphUrl(`/${input.igUserId}/media`), {
     method: "POST",
     body
   });
@@ -114,9 +138,21 @@ export async function getContainerStatus(input: {
   url.searchParams.set("fields", "status_code");
   url.searchParams.set("access_token", input.accessToken);
 
-  const response = await fetch(url);
+  const response = await metaFetch(url.toString());
   const data = await readMetaResponse<MetaStatus>(response);
   return data.status_code;
+}
+
+export async function getContainerStatusWithMeta(input: {
+  creationId: string;
+  accessToken: string;
+}): Promise<MetaStatus> {
+  const url = new URL(graphUrl(`/${input.creationId}`));
+  url.searchParams.set("fields", "status_code");
+  url.searchParams.set("access_token", input.accessToken);
+
+  const response = await metaFetch(url.toString());
+  return readMetaResponse<MetaStatus>(response);
 }
 
 export async function publishMedia(input: {
@@ -129,7 +165,7 @@ export async function publishMedia(input: {
     access_token: input.accessToken
   });
 
-  const response = await fetch(graphUrl(`/${input.igUserId}/media_publish`), {
+  const response = await metaFetch(graphUrl(`/${input.igUserId}/media_publish`), {
     method: "POST",
     body
   });
